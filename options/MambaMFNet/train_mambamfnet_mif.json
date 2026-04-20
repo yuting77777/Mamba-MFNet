@@ -1,0 +1,115 @@
+{
+    "task": "Medical_Fusion" 
+    ,
+    "model": "plain" 
+    ,
+    "gpu_ids": [
+      0,1
+    ],
+    "dist": true,
+    "scale": 1 
+    ,
+    "n_channels": 1 
+    ,
+    "path": {
+      "root": "Model/Medical_Fusion-CT-MRI" 
+      ,
+      "pretrained_netG": null 
+      ,
+      "pretrained_netE": null 
+      ,
+      "models": "./Model/Medical_Fusion-CT-MRI/Medical_Fusion/models"
+    },
+    "datasets": {
+      "train": {
+        "name": "train_dataset" 
+        ,
+        "dataset_type": "med" 
+        ,
+        "dataroot_A": "datasets/trainsets/CT-MRI/CT" 
+        ,
+        "dataroot_B": "datasets/trainsets/CT-MRI/MRI" 
+        ,
+        "H_size": 128
+        ,
+        "dataloader_shuffle": true,
+        "dataloader_num_workers": 8,
+        "dataloader_batch_size": 12
+      },
+      "test": {
+        "name": "test_dataset" 
+        ,
+        "dataset_type": "med" 
+        ,
+        "dataroot_A": "datasets/testsets/CT-MRI/CT" 
+        ,
+        "dataroot_B": "datasets/testsets/CT-MRI/MRI"
+      }
+    },
+    "netG": {
+      "net_type": "MambaMFNet",
+      "upscale": 1,
+      "in_chans": 1,
+      "img_size": 256,
+      "window_size": 8,
+      "img_range": 1.0,
+      "depths": [
+        6,
+        6,
+        6,
+        6
+      ],
+      "embed_dim": 60,
+      "num_heads": [
+        6,
+        6,
+        6,
+        6
+      ],
+      "mlp_ratio": 2,
+      "upsampler": null 
+      ,
+      "resi_connection": "1conv" 
+      ,
+      "init_type": "default"
+    },
+    "train": {
+      "G_lossfn_type": "med" 
+      ,
+      "G_lossfn_weight": 1.0 
+      ,
+      "E_decay": 0.999 
+      ,
+      "G_optimizer_type": "adam" 
+      ,
+      "G_optimizer_lr": 2e-4 
+      ,
+      "G_optimizer_wd": 0 
+      ,
+      "G_optimizer_clipgrad": null 
+      ,
+      "G_optimizer_reuse": true 
+      ,
+      "G_scheduler_type": "MultiStepLR" 
+      ,
+      "G_scheduler_milestones": [
+        25000,
+        40000,
+        45000,
+        47500,
+        50000
+      ],
+      "G_scheduler_gamma": 0.5,
+      "G_regularizer_orthstep": null 
+      ,
+      "G_regularizer_clipstep": null 
+      ,
+      "G_param_strict": true,
+      "E_param_strict": true,
+      "checkpoint_test": 100000
+      ,
+      "checkpoint_save": 5000
+      ,
+      "checkpoint_print": 100
+    }
+  }
