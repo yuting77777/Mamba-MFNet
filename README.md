@@ -43,7 +43,26 @@ Images are randomly split 8:2 into training / test. During training, overlapping
 ## ⚙️ Installation
 
 ### 1. Create a conda environment
-
 ```bash
 conda create -n mamba_mfnet python=3.8
 conda activate mamba_mfnet
+```
+### 2. Install dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Training
+```bash
+python -m torch.distributed.launch --nproc_per_node=2 --master_port=1234 \
+    train_MambaMFNet.py --opt options/MambaMFNet/train_mambamfnet_mif.json --dist True
+```
+### 4. Testing
+python test_MambaMFNet.py \
+    --model_path=./Model/Medical_Fusion-CT-MRI/Medical_Fusion/models/ \
+    --iter_number=100000 \
+    --dataset=CT-MRI \
+    --A_dir=CT \
+    --B_dir=MRI
+```
+
