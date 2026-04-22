@@ -125,7 +125,7 @@ class LayerNorm(nn.Module):
         else:
             return self.body(x)
         
-############################ 主要用于单模态特征提取 ##########################
+############################ Mainly used for unimodal feature extraction ##########################
 class SingleMambaBlock(nn.Module):
     def __init__(self, dim):
         super(SingleMambaBlock, self).__init__()
@@ -137,7 +137,7 @@ class SingleMambaBlock(nn.Module):
         x = self.norm(residual)
         return (self.encoder(x),residual)
 
-############################ 从代码2添加的组件 ##########################
+############################  ##########################
 class SSMSubBlock(nn.Module):
     """SSM子模块：包含Norm和Mamba，与SingleMambaBlock中的设计一致"""
     def __init__(self, dim):
@@ -159,17 +159,17 @@ class SSMSubBlock(nn.Module):
 
 class MambaNormBlock(nn.Module):
     """
-    双路径Mamba块
-    
-    流程：
-    1. 输入x经过LayerNorm
-    2. 分组为两个路径：
-       - 路径1: Linear → Conv → SSM (Norm + Mamba)
-       - 路径2: Linear → Activation
-    3. 两组结果点乘
-    4. 点乘结果经过Linear
-    5. 与输入x进行残差连接
-    6. 输出
+    Dual-path Mamba Block
+
+    Process:
+    1. Input x goes through LayerNorm
+    2. Split into two paths:
+       - Path 1: Linear → Conv → SSM (Norm + Mamba)
+       - Path 2: Linear → Activation
+    3. Element-wise product of the two path outputs
+    4. Product result goes through Linear
+    5. Residual connection with input x
+    6. Output
     """
     def __init__(self, dim, reduction_factor=2, kernel_size=3):
         super(MambaNormBlock, self).__init__()
@@ -177,7 +177,7 @@ class MambaNormBlock(nn.Module):
         self.reduction_factor = reduction_factor
         reduced_dim = dim // reduction_factor
         
-        # 第一步：LayerNorm
+        # LayerNorm
         self.norm = LayerNorm(dim, 'with_bias')
         
         # 路径1的组件：Linear → Conv → SSM
@@ -190,38 +190,38 @@ class MambaNormBlock(nn.Module):
         )
         self.ssm = SSMSubBlock(reduced_dim)
         
-        # 路径2的组件：Linear → Activation
+        # Linear → Activation
         self.linear_path2 = nn.Linear(dim, reduced_dim)
         self.activation = nn.GELU()
         
-        # 点乘后的线性层
+        # Linear layer after the element-wise product
         self.linear_after_multiply = nn.Linear(reduced_dim, dim)
         
     def forward(self, x):
         """
-        前向传播
+        Forward pass
         
         Args:
-            x: 输入特征 [B, C, H, W] 或 [B, L, C]
+            x: Input features [B, C, H, W] or [B, L, C]
         
         Returns:
-            output: 输出特征，与输入x形状相同
+            output: Output features, same shape as input x
         """
-        # 保存输入用于残差连接
+        # Save input for residual connection
         residual = x
         
-        # 获取输入形状信息
+        # Get input shape information
         if len(x.shape) == 4:
-            # 输入是4D特征图
+            # Input is a 4D feature map
             B, C, H, W = x.shape
             is_4d = True
-            # 转换为序列形式处理
+            # Convert to sequence form for processing
             x_seq = to_3d(x)  # [B, H*W, C]
         else:
-            # 输入已经是序列形式
+            # Input is already in sequence form
             B, L, C = x.shape
             is_4d = False
-            # 计算近似的H和W（假设是正方形）
+            # Calculate approximate H and W (assuming square)
             H = int(L ** 0.5)
             W = H
             x_seq = x
@@ -229,43 +229,43 @@ class MambaNormBlock(nn.Module):
         # 1. LayerNorm
         x_norm = self.norm(x_seq)  # [B, L, C]
         
-        # 2. 双路径处理
-        # 路径1: Linear → Conv → SSM
+        # 2. Dual-path processing
+        # Path 1: Linear → Conv → SSM
         path1 = self.linear_path1(x_norm)  # [B, L, reduced_dim]
         
-        # 转换为空间维度进行卷积
+        # Convert to spatial dimensions for convolution
         if is_4d:
             path1_spatial = path1.transpose(1, 2).view(B, -1, H, W)
         else:
-            # 如果是序列输入，先reshape为空间形式
+            # If input is sequential, reshape to spatial form first
             path1_spatial = path1.transpose(1, 2).view(B, -1, H, W)
         
-        # 卷积处理
+        # Convolution processing
         path1_conv = self.conv(path1_spatial)  # [B, reduced_dim, H, W]
         
-        # 转换回序列形式进行SSM
+        # Convert back to sequence form for SSM
         path1_seq = path1_conv.flatten(2).transpose(1, 2)  # [B, H*W, reduced_dim]
         path1_ssm = self.ssm(path1_seq)  # [B, H*W, reduced_dim]
         
-        # 路径2: Linear → Activation
+        # Path 2: Linear → Activation
         path2 = self.linear_path2(x_norm)  # [B, L, reduced_dim]
         path2_act = self.activation(path2)  # [B, L, reduced_dim]
         
-        # 3. 点乘融合
-        # 确保path1_ssm和path2_act维度匹配
+        # 3. Element-wise product fusion
+        # Ensure path1_ssm and path2_act have matching dimensions
         if path1_ssm.shape != path2_act.shape:
-            # 如果形状不匹配，调整path2_act的形状
+            # If shapes don't match, adjust path2_act shape
             path2_act = path2_act.view_as(path1_ssm)
         
         multiplied = path1_ssm * path2_act  # [B, L, reduced_dim]
         
-        # 4. 点乘后Linear
+        # 4. Linear layer after element-wise product
         multiplied_proj = self.linear_after_multiply(multiplied)  # [B, L, C]
         
-        # 5. 与输入x进行残差连接
+        # 5. Residual connection with input x
         output_seq = multiplied_proj + residual if is_4d else multiplied_proj + x_seq
         
-        # 如果需要，转换回原始输入格式
+
         if is_4d:
             output = to_4d(output_seq, H, W)
         else:
@@ -274,7 +274,7 @@ class MambaNormBlock(nn.Module):
         return output
 
 class ChannelAttention(nn.Module):
-    """通道注意力模块"""
+
     def __init__(self, in_channels, reduction_ratio=8):
         super(ChannelAttention, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
@@ -290,21 +290,21 @@ class ChannelAttention(nn.Module):
     def forward(self, x):
         B, C, H, W = x.size()
         
-        # 平均池化和最大池化
+
         avg_out = self.avg_pool(x).view(B, C)
         max_out = self.max_pool(x).view(B, C)
         
-        # 共享MLP
+
         avg_fc = self.fc(avg_out)
         max_fc = self.fc(max_out)
         
-        # 相加并激活
+
         channel_weights = self.sigmoid(avg_fc + max_fc).view(B, C, 1, 1)
         
         return channel_weights
 
 class SpatialAttention(nn.Module):
-    """空间注意力模块"""
+
     def __init__(self, kernel_size=7):
         super(SpatialAttention, self).__init__()
         assert kernel_size in (3, 7), 'kernel size must be 3 or 7'
@@ -314,24 +314,24 @@ class SpatialAttention(nn.Module):
         self.sigmoid = nn.Sigmoid()
         
     def forward(self, x):
-        # 通道维度的最大池化和平均池化
+        
         avg_out = torch.mean(x, dim=1, keepdim=True)
         max_out, _ = torch.max(x, dim=1, keepdim=True)
         
-        # 拼接池化结果
+
         x_pool = torch.cat([avg_out, max_out], dim=1)
         
-        # 卷积生成空间权重
+
         spatial_weights = self.sigmoid(self.conv(x_pool))
         
         return spatial_weights
 
 class DualBranchMambaBlock(nn.Module):
     """
-    双分支Mamba块
-    分支1: Channel Attention + Spatial Attention
-    分支2: Conv2D + Mamba
-    最后进行点乘融合，并在输出后添加原始输入残差连接
+    Dual-branch Mamba Block
+    Branch 1: Channel Attention + Spatial Attention
+    Branch 2: Conv2D + Mamba
+    Finally, element-wise product fusion, followed by residual connection with original input
     """
     def __init__(self, dim, reduction_ratio=8, kernel_size=3):
         super(DualBranchMambaBlock, self).__init__()
@@ -340,105 +340,105 @@ class DualBranchMambaBlock(nn.Module):
         # LayerNorm
         self.norm = LayerNorm(dim, 'with_bias')
         
-        # Linear层用于特征变换和分割
+
         self.linear_in = nn.Linear(dim, dim * 2)
+
         
-        # 分支1: 注意力分支
         self.channel_attention = ChannelAttention(dim, reduction_ratio)
         self.spatial_attention = SpatialAttention(kernel_size)
         self.silu1 = nn.SiLU()
         
-        # 分支2: 卷积+Mamba分支
+
         self.conv = nn.Conv2d(dim, dim, kernel_size=kernel_size, 
                              padding=kernel_size//2, groups=dim)
         self.silu2 = nn.SiLU()
         self.mamba = SingleMambaBlock(dim)
         
-        # 输出投影
+
         self.linear_out = nn.Linear(dim, dim)
         
     def forward(self, x, residual=None):
         """
-        前向传播
+        Forward pass
         Args:
-            x: 输入特征 [B, L, C]
-            residual: 残差连接（可选）
+            x: Input features [B, L, C]
+            residual: Residual connection (optional)
         Returns:
-            output: 输出特征 [B, L, C]
+            output: Output features [B, L, C]
         """
         B, L, C = x.shape
-        H = int(L ** 0.5)  # 假设是正方形特征图
+        H = int(L ** 0.5)
         
-        # 保存最开始的输入，用于最终的残差连接
+
         original_input = x
         
-        # 如果有外部残差连接，先处理
+
         if residual is not None:
             x = x + residual
         
         # LayerNorm
         x_norm = self.norm(x)
         
-        # Linear变换并分割为两个分支
+
         x_linear = self.linear_in(x_norm)  # [B, L, 2C]
         x1, x2 = torch.chunk(x_linear, 2, dim=-1)  # 各为[B, L, C]
         
-        # 转换为空间维度用于卷积和注意力
+
         x1_spatial = x1.transpose(1, 2).view(B, C, H, H)
         x2_spatial = x2.transpose(1, 2).view(B, C, H, H)
         
-        # 分支1: 注意力分支
-        # 通道注意力
+
+
         ca_weight = self.channel_attention(x1_spatial)
         x1_ca = x1_spatial * ca_weight
         
-        # 空间注意力
+
         sa_weight = self.spatial_attention(x1_ca)
         x1_sa = x1_ca * sa_weight
         
-        # SiLU激活
+
         F1 = self.silu1(x1_sa)
         
-        # 分支2: 卷积+Mamba分支
-        # 卷积处理
+
+        
         x2_conv = self.conv(x2_spatial)
         x2_silu = self.silu2(x2_conv)
         
-        # 转换为序列形式用于Mamba
+        
         x2_seq = x2_silu.flatten(2).transpose(1, 2)
         
-        # Mamba处理（注意：这里SingleMambaBlock已经有残差连接）
+        
         x2_mamba, _ = self.mamba([x2_seq, torch.zeros_like(x2_seq)])
         
-        # 转换回空间维度
+        
         F2 = x2_mamba.transpose(1, 2).view(B, C, H, H)
         
-        # 点乘融合
+        
         F = F1 * F2  # [B, C, H, H]
         
-        # 转换回序列形式
+        
         F_seq = F.flatten(2).transpose(1, 2)
         
-        # 输出投影
+        
         output = self.linear_out(F_seq)
         
-        # 添加最终残差连接：将最开始的输入加到输出上
+        
         output = output + original_input
         
         return output
 
 class Auxiliary_Encoder(nn.Module):
     """
-    智能辅助编码器，根据环境自动选择实现
+    Intelligent auxiliary encoder that automatically selects implementation based on environment
     """
     
     def __init__(self, mode="auto", feature_dim=128, **kwargs):
         super().__init__()
         
-        # 根据模式选择实现
+        # Select implementation based on mode
         if mode == "timm" or mode == "auto":
             try:
-                # 尝试使用timm，如果失败则回退
+                # Attempt to use timm, fallback if fails
                 self._init_timm_clip(feature_dim, **kwargs)
                 print("✓ Using timm CLIP model")
                 self.mode = "timm"
@@ -457,13 +457,13 @@ class Auxiliary_Encoder(nn.Module):
             raise ValueError(f"Unknown mode: {mode}")
     
     def _init_timm_clip(self, feature_dim, **kwargs):
-        """初始化timm CLIP模型"""
-        # 这里可以添加离线加载逻辑
-        # 暂时使用简单CNN替代
+        """Initialize timm CLIP model"""
+        # Offline loading logic can be added here
+        # Temporarily using simple CNN as fallback
         self._init_simple_cnn(feature_dim, **kwargs)
     
     def _init_simple_cnn(self, feature_dim, **kwargs):
-        """初始化简单CNN模型"""
+
         self.encoder = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=3, stride=2, padding=1),
             nn.BatchNorm2d(64),
@@ -477,7 +477,7 @@ class Auxiliary_Encoder(nn.Module):
         )
         self.feature_dim = feature_dim
         
-        # 模态特定的投影
+
         self.ct_projection = nn.Sequential(
             nn.Linear(feature_dim, feature_dim // 2),
             nn.LayerNorm(feature_dim // 2),
@@ -493,31 +493,31 @@ class Auxiliary_Encoder(nn.Module):
         )
     
     def _init_none(self, feature_dim, **kwargs):
-        """初始化无实际编码的版本"""
+
         self.feature_dim = feature_dim
         
-        # 创建占位符
+        # Create placeholders
         self.ct_projection = nn.Identity()
         self.mri_projection = nn.Identity()
     
     def extract_modality_specific_features(self, images, modality):
-        """提取模态特定的特征"""
-        # 单通道转三通道
+
+        # Convert single channel to three channels
         if images.shape[1] == 1:
             images = images.repeat(1, 3, 1, 1)
         
-        # 调整大小
+        # Resize
         if images.shape[2] < 64 or images.shape[3] < 64:
             images = F.interpolate(images, size=(128, 128), mode='bilinear')
         
-        # 提取特征
+        # Extract features
         if self.mode == "none":
             batch_size = images.shape[0]
             base_features = torch.randn(batch_size, self.feature_dim).to(images.device)
         else:
             base_features = self.encoder(images)
         
-        # 模态特定的投影
+        # Modality-specific projection
         if modality == "ct":
             projected = self.ct_projection(base_features)
         elif modality == "mri":
@@ -528,7 +528,7 @@ class Auxiliary_Encoder(nn.Module):
         return projected
     
     def forward(self, ct_images, mri_images, pet_images=None, spect_images=None):
-        """前向传播"""
+        """Forward pass"""
         features_dict = {}
         
         features_dict["ct"] = self.extract_modality_specific_features(ct_images, "ct")
@@ -543,25 +543,25 @@ class Auxiliary_Encoder(nn.Module):
         return features_dict
 
 class CM3F (nn.Module):
-    """多层次交叉特征融合单元 (Cross-level Feature Fusion Module)"""
+    """Multi-level Cross Feature Fusion Module"""
     def __init__(self, dim, num_levels=3):
         super(CM3F, self).__init__()
         self.num_levels = num_levels
         self.dim = dim
         
-        # 独立的Mamba模块对用于初始上下文特征提取 - 使用MambaNormBlock替换SingleMambaBlock
+        # Independent Mamba module pairs for initial context feature extraction - using MambaNormBlock to replace SingleMambaBlock
         self.mamba_pairs = nn.ModuleList([
             nn.ModuleList([MambaNormBlock(dim) for _ in range(2)]) 
             for _ in range(num_levels)
         ])
         
-        # 用于局部特征提取的卷积层
+        # Convolutional layers for local feature extraction
         self.local_convs = nn.ModuleList([
             nn.Conv2d(dim, dim, kernel_size=3, padding=1, groups=dim)
             for _ in range(num_levels)
         ])
         
-        # 最终融合的Mamba模块 - 使用MambaNormBlock替换SingleMambaBlock
+        # Final fusion Mamba module - using MambaNormBlock to replace SingleMambaBlock
         self.final_mamba = MambaNormBlock(dim)
         
         self.lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
@@ -569,41 +569,41 @@ class CM3F (nn.Module):
     def forward(self, F1_prime, F2_prime, h, w):
         """
         Args:
-            F1_prime: 模态1的交换后特征 [B, L, C]
-            F2_prime: 模态2的交换后特征 [B, L, C]
-            h, w: 特征图的空间尺寸
+            F1_prime: Exchanged features of modality 1 [B, L, C]
+            F2_prime: Exchanged features of modality 2 [B, L, C]
+            h, w: Spatial dimensions of the feature map
         Returns:
-            fused_features: 融合后的特征 [B, L, C]
+            fused_features: Fused features [B, L, C]
         """
         B, L, C = F1_prime.shape
         
-        # 转换为空间维度用于局部卷积
+        # Convert to spatial dimensions for local convolution
         F1_spatial = F1_prime.transpose(1, 2).view(B, C, h, w)
         F2_spatial = F2_prime.transpose(1, 2).view(B, C, h, w)
         
-        # 初始化各级特征
+        # Initialize level features
         level_features = []
         
         for i in range(self.num_levels):
-            # 独立的Mamba处理 - 注意：MambaNormBlock只需要输入特征，不需要元组
+            # Independent Mamba processing - Note: MambaNormBlock only requires input features, not a tuple
             F1_processed = self.mamba_pairs[i][0](F1_prime)  # 使用MambaNormBlock
             F2_processed = self.mamba_pairs[i][1](F2_prime)  # 使用MambaNormBlock
             
-            # 初步求和融合
+            # Initial summation fusion
             fused_global = F1_processed + F2_processed
             
-            # 局部特征提取
+            # Local feature extraction
             F1_local = self.local_convs[i](F1_spatial)
             F2_local = self.local_convs[i](F2_spatial)
             
-            # 转换为序列形式
+            # Convert to sequence form
             F1_local_seq = F1_local.flatten(2).transpose(1, 2)
             F2_local_seq = F2_local.flatten(2).transpose(1, 2)
             
-            # 二次融合：全局特征 + 局部特征
+            # Secondary fusion: global features + local features
             fused_local = F1_local_seq + F2_local_seq
             
-            # 多层次特征融合
+            # Multi-level feature fusion
             if i == 0:
                 level_fused = fused_global + fused_local
             else:
@@ -611,12 +611,12 @@ class CM3F (nn.Module):
             
             level_features.append(level_fused)
             
-            # 更新输入特征用于下一层
+            # Update input features for the next layer
             F1_prime, F2_prime = F1_processed, F2_processed
         
-        # 最终融合：对所有层次特征进行求和和最终Mamba处理
+        # Final fusion: sum all level features and apply final Mamba processing
         final_fused = sum(level_features)
-        final_fused = self.final_mamba(final_fused)  # 使用MambaNormBlock
+        final_fused = self.final_mamba(final_fused)  # Using MambaNormBlock
         
         return final_fused
 
@@ -759,19 +759,19 @@ class MambaMFNet (nn.Module):
         embed_dim_temp = int(embed_dim / 2)
         print('in_chans: ', in_chans)
         
-        # 添加颜色处理相关参数
+        # Add color processing related parameters
         self.in_chans = in_chans
         self.require_color_processing = (in_chans == 3 or in_chans == 6)
         
-        # 修改均值设置逻辑
+        # Modify mean setting logic
         if in_chans == 3:
             rgb_mean = (0.4488, 0.4371, 0.4040)
             self.mean = torch.Tensor(rgb_mean).view(1, 3, 1, 1)
             self.mean_in = torch.Tensor(rgb_mean).view(1, 3, 1, 1)
         elif in_chans == 6:
             rgbrgb_mean = (0.4488, 0.4371, 0.4040, 0.4488, 0.4371, 0.4040)
-            self.mean = torch.Tensor(rgb_mean).view(1, 3, 1, 1)  # 输出均值
-            self.mean_in = torch.Tensor(rgbrgb_mean).view(1, 6, 1, 1)  # 输入均值
+            self.mean = torch.Tensor(rgb_mean).view(1, 3, 1, 1)  # Output mean
+            self.mean_in = torch.Tensor(rgbrgb_mean).view(1, 6, 1, 1)  # Input mean
         else:
             self.mean = torch.zeros(1, 1, 1, 1)
             self.mean_in = torch.zeros(1, in_chans, 1, 1)
@@ -804,40 +804,40 @@ class MambaMFNet (nn.Module):
 
         #####################################################################################################
         ################################### 1, low-level feature extraction ###################################
-        # 修改卷积层输入通道数，支持1或3通道
-        self.low_level_feature_extraction1 = nn.Conv2d(1, embed_dim_temp, 3, 1, 1)  # 改为1通道输入
+        # Modify convolution layer input channels to support 1 or 3 channels
+        self.low_level_feature_extraction1 = nn.Conv2d(1, embed_dim_temp, 3, 1, 1)  # Changed to 1-channel input
         self.low_level_feature_extraction2 = nn.Conv2d(embed_dim_temp, embed_dim, 3, 1, 1)
         self.lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
 
         #####################################################################################################
         ################################### 2, deep feature extraction ######################################
-        # 修改：使用DualBranchMambaBlock替换SingleMambaBlock，保持与代码2一致
+        # Modified: Replace SingleMambaBlock with DualBranchMambaBlock, consistent with Code 2
         self.high_level_feature_extraction1 = nn.Sequential(*[DualBranchMambaBlock(self.embed_dim) for i in range(8)])
         self.high_level_feature_extraction2 = nn.Sequential(*[DualBranchMambaBlock(self.embed_dim) for i in range(8)])
         
         #####################################################################################################
         ################################### 2.5, feature exchange after extraction ###########################
-        # 修改：使用ChannelExchange替换FeatureShuffleExchange，保持与代码2一致
+        # Modified: Replace FeatureShuffleExchange with ChannelExchange, consistent with Code 2
         self.feature_exchange_after_extraction = ChannelExchange(p=2)
         
         #####################################################################################################
         ################################### 3, CM3F feature fusion ######################################
-        # CM3F已经修改为使用MambaNormBlock
+        # CM3F has been modified to use MambaNormBlock
         self.cm3f = CM3F (dim=embed_dim, num_levels=3)
         
         #####################################################################################################
         ################################ 4, fused image reconstruction ################################
-        # 修改：使用MambaNormBlock替换SingleMambaBlock
+        # Modified: Replace SingleMambaBlock with MambaNormBlock
         self.feature_re = nn.Sequential(*[MambaNormBlock(self.embed_dim) for i in range(8)])
         self.conv_last1 = nn.Conv2d(embed_dim, embed_dim_temp, 3, 1, 1)
         self.conv_last2 = nn.Conv2d(embed_dim_temp, int(embed_dim_temp/2), 3, 1, 1)
-        self.conv_last3 = nn.Conv2d(int(embed_dim_temp/2), 1, 3, 1, 1)  # 输出1通道
+        self.conv_last3 = nn.Conv2d(int(embed_dim_temp/2), 1, 3, 1, 1)  # Output 1 channel
 
-        # 添加RGB-YUV转换相关的层
+        # Add RGB-YUV conversion related layers
         self.rgb_to_yuv = nn.Conv2d(3, 3, 1, 1, 0, bias=False)
         self.yuv_to_rgb = nn.Conv2d(3, 3, 1, 1, 0, bias=False)
         
-        # 初始化RGB-YUV转换矩阵
+        # Initialize RGB-YUV conversion matrix
         rgb_to_yuv_weight = torch.tensor([
             [0.299, 0.587, 0.114],
             [-0.14713, -0.28886, 0.436],
@@ -855,16 +855,16 @@ class MambaMFNet (nn.Module):
         
         #####################################################################################################
         ############################## 5, CLIP Auxiliary Encoder ####################################
-        # 添加CLIP辅助编码器
+        # Add CLIP auxiliary encoder
         self.clip_encoder = Auxiliary_Encoder(
             mode="auto",
             feature_dim=clip_feature_dim
         )
         
-        # CLIP特征融合层
+        # CLIP feature fusion layers
         self.clip_fusion_layers = nn.ModuleDict({
             "ct": nn.Sequential(
-                nn.Linear(embed_dim + 32, embed_dim),  # 128是CLIP投影后的维度
+                nn.Linear(embed_dim + 32, embed_dim),  # 128 is the dimension after CLIP projection
                 nn.LayerNorm(embed_dim),
                 nn.GELU()
             ),
@@ -875,13 +875,13 @@ class MambaMFNet (nn.Module):
             )
         })
         
-        # 跨模态CLIP特征交换模块
+        # Cross-modal CLIP feature exchange module
         self.clip_feature_exchange = nn.Sequential(
-            nn.Linear(64, 128),  # CT+MRI CLIP特征拼接
+            nn.Linear(64, 128),  # CT+MRI CLIP feature concatenation
             nn.LayerNorm(128),
             nn.GELU(),
             nn.Linear(128, 64),
-            nn.Sigmoid()  # 生成交换权重
+            nn.Sigmoid()  # Generate exchange weights
         )
 
     def _init_weights(self, m):
@@ -902,30 +902,30 @@ class MambaMFNet (nn.Module):
         return {'relative_position_bias_table'}
 
     def process_3channel_input(self, x):
-        """处理3通道输入，转换为Y通道并保存UV通道"""
+        """Process 3-channel input, convert to Y channel and save UV channels"""
         B, C, H, W = x.shape
         if C == 3:
-            # RGB转YUV
+            # RGB to YUV
             yuv = self.rgb_to_yuv(x)
-            # 分离Y、U、V通道
-            Y = yuv[:, 0:1, :, :]  # Y通道
-            U = yuv[:, 1:2, :, :]  # U通道
-            V = yuv[:, 2:3, :, :]  # V通道
+            # Separate Y, U, V channels
+            Y = yuv[:, 0:1, :, :]  # Y channel
+            U = yuv[:, 1:2, :, :]  # U channel
+            V = yuv[:, 2:3, :, :]  # V channel
             return Y, U, V, True
         else:
-            # 已经是单通道
+            # Already single channel
             return x, None, None, False
 
     def reconstruct_3channel_output(self, Y, U, V, has_color):
-        """重建3通道输出，将Y通道与UV通道合并"""
+        """Reconstruct 3-channel output, merge Y channel with UV channels"""
         if has_color and U is not None and V is not None:
-            # 调整Y通道大小以匹配UV通道（如果需要）
+            # Resize Y channel to match UV channels if needed
             if Y.shape[2:] != U.shape[2:]:
                 Y = F.interpolate(Y, size=U.shape[2:], mode='bilinear', align_corners=False)
             
-            # 合并YUV通道
+            # Merge YUV channels
             yuv = torch.cat([Y, U, V], dim=1)
-            # YUV转RGB
+            # YUV to RGB
             rgb = self.yuv_to_rgb(yuv)
             return rgb
         else:
@@ -933,18 +933,18 @@ class MambaMFNet (nn.Module):
 
     def augment_features_with_clip(self, features, clip_features, modality):
         """
-        用CLIP特征增强主特征
+        Augment main features with CLIP features
         """
         B, C, H, W = features.shape
         
-        # 调整CLIP特征维度
+        # Expand CLIP feature dimensions
         clip_features_expanded = clip_features.unsqueeze(-1).unsqueeze(-1)
         clip_features_expanded = clip_features_expanded.expand(-1, -1, H, W)
         
-        # 拼接特征
+        # Concatenate features
         combined = torch.cat([features, clip_features_expanded], dim=1)
         
-        # 通过融合层
+        # Pass through fusion layer
         combined = combined.flatten(2).transpose(1, 2)  # [B, H*W, C+128]
         fused = self.clip_fusion_layers[modality](combined)
         fused = fused.transpose(1, 2).view(B, -1, H, W)
@@ -953,16 +953,16 @@ class MambaMFNet (nn.Module):
     
     def exchange_clip_features(self, ct_clip, mri_clip):
         """
-        交换CT和MRI的CLIP特征（跨模态信息增强）
+        Exchange CT and MRI CLIP features (cross-modal information enhancement)
         """
-        # 拼接特征
+        # Concatenate features
         combined = torch.cat([ct_clip, mri_clip], dim=-1)  # [B, 256]
         
-        # 生成交换权重
+        # Generate exchange weights
         exchange_weights = self.clip_feature_exchange(combined)
         ct_weight, mri_weight = torch.chunk(exchange_weights, 2, dim=-1)
         
-        # 特征交换
+        # Feature exchange
         ct_augmented = ct_weight * ct_clip + (1 - ct_weight) * mri_clip
         mri_augmented = mri_weight * mri_clip + (1 - mri_weight) * ct_clip
         
@@ -970,38 +970,38 @@ class MambaMFNet (nn.Module):
 
     def dual_level_feature_extraction(self, x, y, x_orig, y_orig):
         """
-        修改后的特征提取，集成CLIP辅助
+        Modified feature extraction with CLIP assistance
         """
-        # 处理输入通道问题
+        # Handle input channel issues
         I1_y, I1_u, I1_v, I1_has_color = self.process_3channel_input(x_orig)
         I2_y, I2_u, I2_v, I2_has_color = self.process_3channel_input(y_orig)
         
-        # 保存UV通道用于后续重建
+        # Save UV channels for subsequent reconstruction
         self.I1_u, self.I1_v = I1_u, I1_v
         self.I2_u, self.I2_v = I2_u, I2_v
         self.I1_has_color = I1_has_color
         self.I2_has_color = I2_has_color
         
-        # 原有的特征提取（现在处理的是Y通道，即1通道）
+        # Original feature extraction (now processing Y channel, i.e., 1 channel)
         I1 = self.lrelu(self.low_level_feature_extraction1(I1_y))
         I1 = self.lrelu(self.low_level_feature_extraction2(I1))  
 
         I2 = self.lrelu(self.low_level_feature_extraction1(I2_y))
         I2 = self.lrelu(self.low_level_feature_extraction2(I2))   
         
-        # 提取CLIP辅助特征
+        # Extract CLIP auxiliary features
         clip_features = self.clip_encoder(x_orig, y_orig)
         ct_clip = clip_features["ct"]
         mri_clip = clip_features["mri"]
         
-        # 跨模态CLIP特征交换
+        # Cross-modal CLIP feature exchange
         ct_clip_aug, mri_clip_aug = self.exchange_clip_features(ct_clip, mri_clip)
         
-        # 用CLIP特征增强主特征
+        # Augment main features with CLIP features
         I1_clip_augmented = self.augment_features_with_clip(I1, ct_clip_aug, "ct")
         I2_clip_augmented = self.augment_features_with_clip(I2, mri_clip_aug, "mri")
         
-        # 继续原有的处理流程
+        # Continue with original processing flow
         b, c, h, w = I2_clip_augmented.shape
         
         x_size = (I1_clip_augmented.shape[2], I1_clip_augmented.shape[3])
@@ -1014,7 +1014,7 @@ class MambaMFNet (nn.Module):
         I1_seq = self.pos_drop(I1_seq)
         I2_seq = self.pos_drop(I2_seq)
 
-        # 修改：使用DualBranchMambaBlock进行处理
+        # Modified: Use DualBranchMambaBlock for processing
         I1_processed = I1_seq
         I2_processed = I2_seq
         
@@ -1027,22 +1027,22 @@ class MambaMFNet (nn.Module):
         return I1_processed, 0, I2_processed, 0, h, w
     
     def dual_phase_feature_fusion(self, x, x_residual, y, y_residual, h, w):
-        # 修改：使用ChannelExchange进行特征交换
-        # 首先将特征转换为序列形式进行交换
+        # Modified: Use ChannelExchange for feature exchange
+        # First convert features to sequence form for exchange
         I1_seq = x.permute(0, 2, 1)  # [B, N, C] -> [B, C, N]
         I2_seq = y.permute(0, 2, 1)  # [B, N, C] -> [B, C, N]
         
-        # 在进入CM3F之前进行特征通道交换
+        # Perform feature channel exchange before entering CM3F
         I1_exchanged, I2_exchanged = self.feature_exchange_after_extraction(I1_seq, I2_seq)
         
-        # 将交换后的特征图转换回序列形式
+        # Convert exchanged feature maps back to sequence form
         I1_exchanged = I1_exchanged.permute(0, 2, 1)  # [B, C, N] -> [B, N, C]
         I2_exchanged = I2_exchanged.permute(0, 2, 1)
         
-        # 使用CM3F进行多层次特征融合
+        # Use CM3F for multi-level feature fusion
         fusion_f = self.cm3f(I1_exchanged, I2_exchanged, h, w)
         
-        # 转换回空间维度
+        # Convert back to spatial dimensions
         fusion_f = self.patch_unembed(fusion_f,(h,w))
         
         return fusion_f
@@ -1051,7 +1051,7 @@ class MambaMFNet (nn.Module):
         x_size = (x.shape[2], x.shape[3])
         x = self.patch_embed(x)
         
-        # 修改：使用MambaNormBlock进行处理
+        # Modified: Use MambaNormBlock for processing
         for block in self.feature_re:
             x = block(x)
   
@@ -1060,7 +1060,7 @@ class MambaMFNet (nn.Module):
         # -------------------Convolution------------------- #
         x = self.lrelu(self.conv_last1(x))
         x = self.lrelu(self.conv_last2(x))
-        x = self.conv_last3(x)  # 输出1通道的Y通道
+        x = self.conv_last3(x)  # Output 1-channel Y channel
         
         return x
 
@@ -1069,11 +1069,11 @@ class MambaMFNet (nn.Module):
         y = B
         H, W = x.shape[2:]
         
-        # 保存原始图像用于CLIP特征提取
+        # Save original images for CLIP feature extraction
         A_orig = A.clone()
         B_orig = B.clone()
         
-        # 根据输入通道数设置均值
+        # Set mean based on input channels
         if A.shape[1] == 3:
             self.mean_A = self.mean.type_as(x)
         else:
@@ -1086,7 +1086,7 @@ class MambaMFNet (nn.Module):
             
         self.mean = (self.mean_A + self.mean_B) / 2
 
-        # 归一化处理
+        # Normalization processing
         if A.shape[1] == 3:
             x = (x - self.mean_A) * self.img_range
         else:
@@ -1104,26 +1104,26 @@ class MambaMFNet (nn.Module):
         fusion_feature = self.dual_phase_feature_fusion(feature1, residual_feature1, feature2, residual_feature2, h, w)
 
         # Fused_image_reconstruction
-        fused_y = self.fused_img_recon(fusion_feature)  # 得到1通道的Y通道
+        fused_y = self.fused_img_recon(fusion_feature)  # Obtain 1-channel Y channel
         
-        # 重建颜色通道
+        # Reconstruct color channels
         if self.I1_has_color or self.I2_has_color:
-            # 选择使用哪个模态的UV通道（优先使用有颜色的模态）
+            # Choose which modality's UV channels to use (prefer the modality with color)
             if self.I1_has_color:
                 U, V = self.I1_u, self.I1_v
             else:
                 U, V = self.I2_u, self.I2_v
             
-            # 将Y通道与UV通道合并
+            # Merge Y channel with UV channels
             fused_img = self.reconstruct_3channel_output(fused_y, U, V, True)
         else:
             fused_img = fused_y
         
-        # 逆归一化
+        # Inverse normalization
         if fused_img.shape[1] == 3:
             fused_img = fused_img / self.img_range + self.mean
         else:
-            fused_img = fused_img / self.img_range + self.mean.mean(dim=1, keepdim=True)  # 单通道使用均值均值
+            fused_img = fused_img / self.img_range + self.mean.mean(dim=1, keepdim=True)  # Use mean of means for single channel
 
         return fused_img[:, :, :H*self.upscale, :W*self.upscale]
     
