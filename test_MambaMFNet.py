@@ -24,9 +24,9 @@ from data.dataloder import Dataset as D
 from torch.utils.data import DataLoader
 os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 
-# 评价指标计算函数
+# Evaluation metric calculation functions
 def calculate_en(image):
-    """计算熵 (EN)"""
+    """Calculate entropy (EN)"""
     if image.dtype != np.uint8:
         if image.max() <= 1.0:
             image = (image * 255).astype(np.uint8)
@@ -40,7 +40,7 @@ def calculate_en(image):
     return -np.sum(hist * np.log2(hist))
 
 def calculate_sd(image):
-    """计算标准差 (SD)"""
+    """Calculate standard deviation (SD)"""
     if image.dtype != np.uint8:
         if image.max() <= 1.0:
             image = image * 255.0
@@ -48,7 +48,7 @@ def calculate_sd(image):
     return np.std(image)
 
 def calculate_sf(image):
-    """计算空间频率 (SF)"""
+    """Calculate spatial frequency (SF)"""
     if image.dtype != np.uint8:
         if image.max() <= 1.0:
             image = image * 255.0
@@ -59,7 +59,7 @@ def calculate_sf(image):
     return np.sqrt(rf**2 + cf**2)
 
 def ComEntropy(img1, img2):
-    """计算联合熵"""
+    """Calculate joint entropy"""
     width = img1.shape[0]
     height = img1.shape[1]
     tmp = np.zeros((256, 256))
@@ -83,13 +83,13 @@ def ComEntropy(img1, img2):
 
 def calculate_mi(img1, img2, fused):
     def calc_mi(x, y):
-        # 使用直方图2D计算联合分布
+        # Calculate joint distribution using 2D histogram
         hist_2d, _, _ = np.histogram2d(x.flatten(), y.flatten(), bins=256)
         p_xy = hist_2d / np.sum(hist_2d)
         p_x = np.sum(p_xy, axis=1)
         p_y = np.sum(p_xy, axis=0)
         
-        # 计算互信息
+        # Calculate mutual information
         mi = 0
         for i in range(p_xy.shape[0]):
             for j in range(p_xy.shape[1]):
@@ -97,7 +97,7 @@ def calculate_mi(img1, img2, fused):
                     mi += p_xy[i, j] * np.log2(p_xy[i, j] / (p_x[i] * p_y[j]))
         return mi
     
-    # 归一化到0-255
+    # Calculate mutual information
     img1 = (img1 - img1.min()) / (img1.max() - img1.min() + 1e-8) * 255
     img2 = (img2 - img2.min()) / (img2.max() - img2.min() + 1e-8) * 255
     fused = (fused - fused.min()) / (fused.max() - fused.min() + 1e-8) * 255
@@ -108,14 +108,14 @@ def calculate_mi(img1, img2, fused):
     return mi_af + mi_bf
 
 def calculate_scd(img1, img2, fused):
-    """计算差异相关和 (SCD) - 修正负值处理版本"""
+    """Calculate sum of correlation differences (SCD)"""
     
     def normalized_correlation(x, y):
-        """计算归一化相关系数"""
+        """Calculate normalized correlation coefficient"""
         x = x.astype(np.float64)
         y = y.astype(np.float64)
         
-        # 零均值化
+        # Zero-mean
         x_mean = np.mean(x)
         y_mean = np.mean(y)
         x_zero_mean = x - x_mean
@@ -124,11 +124,11 @@ def calculate_scd(img1, img2, fused):
         numerator = np.sum(x_zero_mean * y_zero_mean)
         denominator = np.sqrt(np.sum(x_zero_mean**2) * np.sum(y_zero_mean**2))
         
-        # 添加小值避免除零，并限制在[-1, 1]范围
+        # Add small value to avoid division by zero, clamp to [-1, 1] range
         corr = numerator / (denominator + 1e-10)
         return np.clip(corr, -1.0, 1.0)
     
-    # 统一数据范围和类型
+    # Unify data range and type
     def normalize_image(img):
         if img.dtype != np.uint8:
             if img.max() <= 1.0:
@@ -139,24 +139,24 @@ def calculate_scd(img1, img2, fused):
     img2_norm = normalize_image(img2)
     fused_norm = normalize_image(fused)
     
-    # 正确的SCD计算公式
+    # Correct SCD formula
     scd1 = normalized_correlation(img1_norm, fused_norm - img2_norm)
     scd2 = normalized_correlation(img2_norm, fused_norm - img1_norm)
     
     scd_total = scd1 + scd2
     
-    # 修改这里：允许返回负值，只保留警告信息
+
     if scd_total < 0:
         print(f"Warning: Negative SCD detected: {scd_total:.4f} (scd1={scd1:.4f}, scd2={scd2:.4f})")
-        # 不再截断为0，而是直接返回负值
-        # 这表示融合质量可能有问题
+
+
     
-    return scd_total  # 直接返回计算值，可以是负数
+    return scd_total  
 
 def calculate_vif(img1, img2, fused):
     """
-    使用 sewar 库的标准多尺度 VIF 实现。
-    若未安装 sewar，则回退到自定义实现并给出警告。
+    Use sewar library's standard multi-scale VIF implementation.
+    If sewar is not installed, fallback to custom implementation with warning.
     """
     try:
         from sewar.full_ref import vifp
@@ -166,7 +166,7 @@ def calculate_vif(img1, img2, fused):
         use_sewar = False
 
     if use_sewar:
-        # 预处理图像：转换为 float64 并缩放到 [0,1] 范围
+        # Preprocess images: convert to float64 and scale to [0,1] range
         def prepare(img):
             img = img.astype(np.float64)
             if img.max() > 1.0:
@@ -177,39 +177,39 @@ def calculate_vif(img1, img2, fused):
         img2_prep = prepare(img2)
         fused_prep = prepare(fused)
 
-        # 计算 VIF（两个源图像分别与融合图像比较）
+        # Calculate VIF (compare both source images with fused image)
         vif1 = vifp(img1_prep, fused_prep)
         vif2 = vifp(img2_prep, fused_prep)
 
-        # 平均并限制在 [0,1] 范围内
+        # Average and clamp to [0,1] range
         vif_avg = (vif1 + vif2) / 2.0
         return np.clip(vif_avg, 0.0, 1.0)
     else:
-        # 回退到自定义实现（原代码保留为后备）
+        # Fallback to custom implementation (original code retained as backup)
         return _calculate_vif_fallback(img1, img2, fused)
 
-# 将原 calculate_vif 函数完整移到此处作为后备实现
+
 def _calculate_vif_fallback(img1, img2, fused):
     """
-    改进的多尺度VIF实现，特别处理SPECT-MRI等特殊情况
-    参考：Sheikh, H. R., & Bovik, A. C. (2006). Image information and visual quality.
-    修改：针对SPECT-MRI等模态的特殊处理
+    Improved multi-scale VIF implementation, specially handling special cases like SPECT-MRI
+    Reference: Sheikh, H. R., & Bovik, A. C. (2006). Image information and visual quality.
+
     """
     def vifp_mscale(ref, dist, modality='generic'):
-        """多尺度VIF计算，添加模态特异性处理"""
-        # 模态特定的噪声方差调整
+        """Multi-scale VIF calculation with modality-specific processing"""
+
         if modality.lower() == 'spect':
-            sigma_nsq = 0.5  # SPECT图像噪声较低，降低噪声方差估计
+            sigma_nsq = 0.5  
         else:
-            sigma_nsq = 2.0  # 默认值，适用于PET和CT
+            sigma_nsq = 2.0  
         
         eps = 1e-10
         
-        # 确保图像为float64
+
         ref = ref.astype(np.float64)
         dist = dist.astype(np.float64)
         
-        # 预处理：去除异常值
+
         def clip_outliers(image, lower_percentile=0.1, upper_percentile=99.9):
             lower = np.percentile(image, lower_percentile)
             upper = np.percentile(image, upper_percentile)
@@ -218,24 +218,24 @@ def _calculate_vif_fallback(img1, img2, fused):
         ref = clip_outliers(ref)
         dist = clip_outliers(dist)
         
-        # 4个尺度
+
         scales = 4
         num = np.zeros(scales)
         den = np.zeros(scales)
         
         for scale in range(scales):
-            # 当前尺度的图像
+
             if scale == 0:
                 ref_scaled = ref.copy()
                 dist_scaled = dist.copy()
             else:
-                # 高斯模糊后下采样
+
                 ref_scaled = cv2.GaussianBlur(ref_scaled, (5, 5), 1.0)
                 dist_scaled = cv2.GaussianBlur(dist_scaled, (5, 5), 1.0)
                 ref_scaled = ref_scaled[::2, ::2]
                 dist_scaled = dist_scaled[::2, ::2]
             
-            # 计算局部统计量
+
             window = cv2.getGaussianKernel(7, 7/6)
             window = window @ window.T
             
@@ -249,52 +249,52 @@ def _calculate_vif_fallback(img1, img2, fused):
             sigma12 = cv2.filter2D(ref_scaled*dist_scaled, -1, window, 
                                   borderType=cv2.BORDER_REFLECT) - mu1*mu2
             
-            # 防止负值
+
             sigma1_sq = np.maximum(sigma1_sq, 0)
             sigma2_sq = np.maximum(sigma2_sq, 0)
             
-            # 计算增益和噪声方差
+
             g = sigma12 / (sigma1_sq + eps)
             sigma_v_sq = sigma2_sq - g * sigma12
             sigma_v_sq = np.maximum(sigma_v_sq, 0)
             
-            # SPECT特异性处理：限制异常大的增益值
+
             if modality.lower() == 'spect':
-                g = np.clip(g, 0, 5)  # 限制增益最大值
+                g = np.clip(g, 0, 5)  
             
-            # 计算当前尺度的VIF贡献
+
             num[scale] = np.sum(np.log10(1 + g**2 * sigma1_sq / (sigma_v_sq + sigma_nsq + eps)))
             den[scale] = np.sum(np.log10(1 + sigma1_sq / (sigma_nsq + eps)))
         
-        # 加权平均
+
         vif = np.sum(num) / (np.sum(den) + eps)
         
-        # VIF理论上应在0-1之间，但由于计算误差可能略高于1
-        # 对于SPECT，我们更严格地限制范围
+
+
         if modality.lower() == 'spect':
-            return min(vif, 1.2)  # 更严格的上限
+            return min(vif, 1.2)  
         else:
             return min(vif, 1.5)
     
-    # 改进的归一化函数
+
     def normalize_img(img, modality='generic'):
         img = img.astype(np.float64)
+
         
-        # 检查图像是否已经归一化
         if img.max() > 1.0:
             img = img / 255.0
         
-        # 模态特定的归一化
+
         if modality.lower() == 'spect':
-            # SPECT图像通常有较低的背景值和较高的对比度
-            # 使用自适应归一化
+
+
             non_zero = img[img > 0]
             if len(non_zero) > 0:
                 p99 = np.percentile(non_zero, 99)
                 if p99 > 0:
                     img = np.clip(img / p99, 0, 1)
         else:
-            # 对于PET和CT，使用标准归一化
+
             img_min = img.min()
             img_max = img.max()
             if img_max > img_min:
@@ -302,25 +302,25 @@ def _calculate_vif_fallback(img1, img2, fused):
         
         return img
     
-    # 检测图像类型
+
     def detect_modality(img1, img2):
-        """简单的图像类型检测"""
-        # 基于强度分布判断
+
+
         img1_flat = img1.flatten()
         img2_flat = img2.flatten()
         
-        # 计算统计特征
+
         img1_nonzero = img1_flat[img1_flat > 0]
         img2_nonzero = img2_flat[img2_flat > 0]
         
         if len(img1_nonzero) > 0 and len(img2_nonzero) > 0:
-            # SPECT通常有更高的峰度（更尖锐的分布）
+            # SPECT typically has higher kurtosis (sharper distribution)
             from scipy.stats import kurtosis
             try:
                 k1 = kurtosis(img1_nonzero)
                 k2 = kurtosis(img2_nonzero)
                 
-                # 如果任一图像具有高峰度，可能是SPECT
+                # If either image has high kurtosis, it might be SPECT
                 if k1 > 10 or k2 > 10:
                     return 'spect'
             except:
@@ -328,30 +328,30 @@ def _calculate_vif_fallback(img1, img2, fused):
         
         return 'generic'
     
-    # 检测模态
+    # Detect modality
     modality = detect_modality(img1, img2)
     
-    # 预处理
+    # Preprocess
     img1_norm = normalize_img(img1, modality)
     img2_norm = normalize_img(img2, modality)
     fused_norm = normalize_img(fused, modality)
     
-    # 计算VIF，传入模态信息
+    # Calculate VIF, passing modality information
     vif1 = vifp_mscale(img1_norm, fused_norm, modality)
     vif2 = vifp_mscale(img2_norm, fused_norm, modality)
     
-    # 平均VIF值
+    # Average VIF values
     vif_avg = (vif1 + vif2) / 2.0
     
-    # 最终范围限制
+    # Final range clamping
     vif_avg = min(max(vif_avg, 0), 1.0)
     
     return vif_avg
 
 
 def calculate_qabf(img1, img2, fused):
-    """计算融合因子 (Q_abf) - 按照您提供的MATLAB代码转换为Python"""
-    # 模型参数
+    """Calculate fusion factor (Q_abf) - Converted from MATLAB code to Python as provided"""
+    # Model parameters
     L = 1
     Tg = 0.9994
     kg = -15
@@ -360,12 +360,12 @@ def calculate_qabf(img1, img2, fused):
     ka = -22
     Da = 0.8
     
-    # Sobel算子
+
     h1 = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]])
     h2 = np.array([[0, 1, 2], [-1, 0, 1], [-2, -1, 0]])
     h3 = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]])
     
-    # 转换为double类型
+
     def to_double(img):
         if img.dtype != np.uint8:
             if img.max() <= 1.0:
@@ -376,7 +376,7 @@ def calculate_qabf(img1, img2, fused):
     pB = to_double(img2)
     pF = to_double(fused)
     
-    # 如果是彩色图像，转换为灰度
+
     if len(pA.shape) > 2 and pA.shape[2] > 1:
         pA = cv2.cvtColor(pA.astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float64)
     if len(pB.shape) > 2 and pB.shape[2] > 1:
@@ -384,7 +384,7 @@ def calculate_qabf(img1, img2, fused):
     if len(pF.shape) > 2 and pF.shape[2] > 1:
         pF = cv2.cvtColor(pF.astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float64)
     
-    # 计算梯度幅度和方向
+
     SAx = convolve2d(pA, h3, mode='same')
     SAy = convolve2d(pA, h1, mode='same')
     gA = np.sqrt(SAx**2 + SAy**2)
@@ -422,7 +422,7 @@ def calculate_qabf(img1, img2, fused):
             else:
                 aF[i, j] = np.arctan(SFy[i, j] / SFx[i, j])
     
-    # 计算QAF
+
     GAF = np.zeros((M, N))
     AAF = np.zeros((M, N))
     QgAF = np.zeros((M, N))
@@ -446,7 +446,7 @@ def calculate_qabf(img1, img2, fused):
             
             QAF[i, j] = QgAF[i, j] * QaAF[i, j]
     
-    # 计算QBF
+
     GBF = np.zeros((M, N))
     ABF = np.zeros((M, N))
     QgBF = np.zeros((M, N))
@@ -470,7 +470,7 @@ def calculate_qabf(img1, img2, fused):
             
             QBF[i, j] = QgBF[i, j] * QaBF[i, j]
     
-    # 计算最终的Qabf
+
     deno = np.sum(gA) + np.sum(gB)
     nume = np.sum(QAF * gA) + np.sum(QBF * gB)
     Qabf1 = nume / deno if deno != 0 else 0
@@ -478,21 +478,21 @@ def calculate_qabf(img1, img2, fused):
     return Qabf1
 
 def calculate_ssim_metric(img1, img2, fused):
-    """计算结构相似性 (SSIM) - 改进版本"""
+    """Calculate structural similarity (SSIM)"""
     
     def prepare_for_ssim(img):
-        """准备图像用于SSIM计算"""
+        """Prepare image for SSIM calculation"""
         if len(img.shape) > 2:
-            # 如果是彩色图像，转换为灰度
+            # If color image, convert to grayscale
             if img.shape[2] == 3:
                 img = cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_RGB2GRAY)
             elif img.shape[2] == 4:
                 img = cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_RGBA2GRAY)
         
-        # 确保是二维数组
+        # Ensure 2D array
         img = np.squeeze(img)
         
-        # 检查并转换数据类型
+        # Check and convert data type
         if img.dtype == np.uint8:
             return img.astype(np.float32) / 255.0
         elif img.max() > 1.0:
@@ -501,25 +501,25 @@ def calculate_ssim_metric(img1, img2, fused):
             return img.astype(np.float32)
     
     def get_window_size(img_size):
-        """根据图像大小确定合适的窗口大小"""
+        """Determine appropriate window size based on image size"""
         min_dim = min(img_size)
         if min_dim < 7:
             return min_dim if min_dim % 2 == 1 else min_dim - 1
         else:
-            return 7  # skimage默认值
+            return 7  # skimage default value
     
-    # 准备图像
+    # Prepare images
     img1_prep = prepare_for_ssim(img1)
     img2_prep = prepare_for_ssim(img2)
     fused_prep = prepare_for_ssim(fused)
     
-    # 检查图像尺寸
+    # Check image dimensions
     h1, w1 = img1_prep.shape
     h2, w2 = img2_prep.shape
     hf, wf = fused_prep.shape
     
     if h1 != h2 or w1 != w2 or h1 != hf or w1 != wf:
-        # 如果不一致，调整到最小尺寸
+        # If inconsistent, resize to minimum dimensions
         h_min = min(h1, h2, hf)
         w_min = min(w1, w2, wf)
         img1_prep = cv2.resize(img1_prep, (w_min, h_min))
@@ -527,10 +527,10 @@ def calculate_ssim_metric(img1, img2, fused):
         fused_prep = cv2.resize(fused_prep, (w_min, h_min))
         print(f"Warning: Resized images to {h_min}x{w_min} for SSIM calculation")
     
-    # 确定窗口大小
+    # Determine window size
     win_size = get_window_size(img1_prep.shape)
     
-    # 计算SSIM - 使用skimage的ssim，但指定合适的数据范围
+    # Calculate SSIM - use skimage's ssim, but specify appropriate data range
     try:
         # SSIM between img1 and fused
         ssim1 = ssim(
@@ -555,31 +555,31 @@ def calculate_ssim_metric(img1, img2, fused):
         )
     except Exception as e:
         print(f"Error computing SSIM: {e}")
-        # 如果标准方法失败，使用更简单的设置
+        # If standard method fails, use simpler settings
         try:
             ssim1 = ssim(img1_prep, fused_prep, data_range=1.0)
             ssim2 = ssim(img2_prep, fused_prep, data_range=1.0)
         except:
-            # 如果仍然失败，尝试手动计算
+
             print("Using manual SSIM fallback")
             ssim1 = compute_simple_ssim(img1_prep, fused_prep)
             ssim2 = compute_simple_ssim(img2_prep, fused_prep)
     
-    # 处理NaN值
+
     if np.isnan(ssim1):
         ssim1 = 0.0
     if np.isnan(ssim2):
         ssim2 = 0.0
     
-    # 返回平均值
+
     return (ssim1 + ssim2) / 2.0
 
 def compute_simple_ssim(img1, img2, K1=0.01, K2=0.03):
-    """简单的SSIM计算（备用方法）"""
+    """Simple SSIM calculation (fallback method)"""
     C1 = (K1 * 1.0) ** 2
     C2 = (K2 * 1.0) ** 2
     
-    # 计算均值
+    # Calculate means
     mu1 = cv2.GaussianBlur(img1, (11, 11), 1.5)
     mu2 = cv2.GaussianBlur(img2, (11, 11), 1.5)
     
@@ -587,12 +587,12 @@ def compute_simple_ssim(img1, img2, K1=0.01, K2=0.03):
     mu2_sq = mu2 ** 2
     mu1_mu2 = mu1 * mu2
     
-    # 计算方差和协方差
+    # Calculate variances and covariance
     sigma1_sq = cv2.GaussianBlur(img1 ** 2, (11, 11), 1.5) - mu1_sq
     sigma2_sq = cv2.GaussianBlur(img2 ** 2, (11, 11), 1.5) - mu2_sq
     sigma12 = cv2.GaussianBlur(img1 * img2, (11, 11), 1.5) - mu1_mu2
     
-    # SSIM公式
+    # SSIM formula
     num = (2 * mu1_mu2 + C1) * (2 * sigma12 + C2)
     den = (mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2)
     
@@ -600,7 +600,7 @@ def compute_simple_ssim(img1, img2, K1=0.01, K2=0.03):
     return np.mean(ssim_map)
 
 def calculate_ag(image):
-    """计算平均梯度 (AG)"""
+    """Calculate average gradient (AG)"""
     if image.dtype != np.uint8:
         if image.max() <= 1.0:
             image = image * 255.0
@@ -611,7 +611,7 @@ def calculate_ag(image):
     return np.mean(gradient_magnitude)
 
 def calculate_all_metrics(img1, img2, fused):
-    """计算所有九个评价指标"""
+    """Calculate all nine evaluation metrics"""
     metrics = {}
     
     try:
@@ -632,7 +632,7 @@ def calculate_all_metrics(img1, img2, fused):
     return metrics
 
 def save_metrics_to_file(metrics_data, save_dir, filename="evaluation_metrics.txt"):
-    """将指标结果保存到文件"""
+    """Save metric results to file"""
     os.makedirs(save_dir, exist_ok=True)
     filepath = os.path.join(save_dir, filename)
     
@@ -703,7 +703,7 @@ def main():
 
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     
-    # 设置模型
+    # Set up model
     model_path = os.path.join(args.model_path, args.iter_number + '_E.pth')
     if os.path.exists(model_path):
         print(f'loading model from {model_path}')
@@ -715,33 +715,33 @@ def main():
     model.eval()
     model = model.to(device)
     
-    # 设置window_size
+    # Set window_size
     window_size = 8
     
-    # 存储所有图像的指标
+    # Store metrics for all images
     all_metrics = []
     individual_metrics = {}
     
-    # 只处理测试集，不处理训练集
+    # Only process test set, not training set
     phase = 'testsets'  # 只处理测试集
     
-    # 构建完整路径 - 直接读取CT和MRI目录，没有类别子目录
+    # Build full path - directly read CT and MRI directories, no category subdirectories
     base_path = os.path.join(args.data_root, phase, args.dataset)
     a_dir = os.path.join(base_path, args.A_dir)
     b_dir = os.path.join(base_path, args.B_dir)
     
-    # 检查路径是否存在
+    # Check if paths exist
     if not os.path.exists(a_dir) or not os.path.exists(b_dir):
         print(f"Error: Test dataset paths don't exist!")
         print(f"A_dir: {a_dir} - exists: {os.path.exists(a_dir)}")
         print(f"B_dir: {b_dir} - exists: {os.path.exists(b_dir)}")
         sys.exit(1)
         
-    # 创建保存目录
+    # Create save directory
     save_dir = os.path.join('results', f'{args.dataset}_{phase}')
     os.makedirs(save_dir, exist_ok=True)
     
-    # 创建数据集
+    # Create dataset
     test_set = D(a_dir, b_dir, args.in_channel)
     test_loader = DataLoader(test_set, batch_size=1,
                              shuffle=False, num_workers=1,
@@ -755,9 +755,9 @@ def main():
         img_b = test_data['B'].to(device)
         start = time.time()
         
-        # 推理
+
         with torch.no_grad():
-            # 填充输入图像
+
             _, _, h_old, w_old = img_a.size()
             h_pad = (h_old // window_size + 1) * window_size - h_old
             w_pad = (w_old // window_size + 1) * window_size - w_old
@@ -774,20 +774,20 @@ def main():
         end = time.time()
         output_img = util.tensor2uint(output)
         
-        # 保存结果
+        # Save result
         save_name = os.path.join(save_dir, imgname)
         util.imsave(output_img, save_name)
         
-        # 计算评价指标
+        # Calculate evaluation metrics
         img_a_np = util.tensor2uint(img_a[..., :h_old, :w_old].detach()[0].float().cpu())
         img_b_np = util.tensor2uint(img_b[..., :h_old, :w_old].detach()[0].float().cpu())
         
-        # 转换为float32类型用于计算
+        # Convert to float32 type for calculation
         img_a_np = img_a_np.astype(np.float32)
         img_b_np = img_b_np.astype(np.float32)
         output_np = output_img.astype(np.float32)
         
-        # 计算所有指标
+        # Calculate all metrics
         metrics = calculate_all_metrics(img_a_np, img_b_np, output_np)
         all_metrics.append(metrics)
         individual_metrics[imgname] = metrics
@@ -797,7 +797,7 @@ def main():
               f"MI={metrics['MI']:.4f}, SCD={metrics['SCD']:.4f}, VIF={metrics['VIF']:.4f}, "
               f"Q_abf={metrics['Q_abf']:.4f}, SSIM={metrics['SSIM']:.4f}, AG={metrics['AG']:.4f}")
     
-    # 计算平均指标
+    # Calculate average metrics
     if all_metrics:
         avg_metrics = {}
         for key in all_metrics[0].keys():
@@ -817,7 +817,7 @@ def main():
         print("AG (Average Gradient): {:.4f}".format(avg_metrics['AG']))
         print("="*80)
         
-        # 保存指标到文件
+        # Save metrics to file
         metrics_data = {
             'dataset': args.dataset,
             'model': f'MambaDFuse_iter{args.iter_number}',
@@ -826,7 +826,7 @@ def main():
             'average_metrics': avg_metrics
         }
         
-        # 保存到results目录
+        # Save to results directory
         results_dir = os.path.join('results', args.dataset)
         os.makedirs(results_dir, exist_ok=True)
         
@@ -852,10 +852,10 @@ def define_model(args):
 
 def test(img_a, img_b, model, args, window_size):
     if args.tile is None:
-        # 整图处理
+        # Whole image processing
         output = model(img_a, img_b)
     else:
-        # 分块处理
+        # Patch-based processing
         b, c, h, w = img_a.size()
         tile = min(args.tile, h, w)
         assert tile % window_size == 0, "tile size should be a multiple of window_size"
