@@ -203,13 +203,13 @@ def main(json_path='options/MambaMFNet/train_mambadfuse_mif.json'):
                     message += '{:s}: {:.3e} '.format(k, v)
                 logger.info(message)
 
-                # Check for best loss - 只记录最佳iter和损失值，不保存模型
+                # Check for best loss - only record best iter and loss value, do not save model
                 current_loss = logs.get('G_loss', float('inf'))
                 if current_loss < best_loss:
                     best_loss = current_loss
                     best_step = current_step
                     
-                    # 只保存最佳损失信息到文件，不调用模型保存
+                    # Only save best loss information to file, do not call model save
                     with open(best_loss_file, 'w') as f:
                         f.write('Best Step: {}\n'.format(best_step))
                         f.write('Best Loss: {:.6f}\n'.format(best_loss))
@@ -218,14 +218,14 @@ def main(json_path='options/MambaMFNet/train_mambadfuse_mif.json'):
                     logger.info('New best loss: {:.6f} at step {}'.format(best_loss, best_step))
 
             # -------------------------------
-            # 5) save model - 保持原有的保存逻辑不变
+            # 5) save model - keep original save logic unchanged
             # -------------------------------
             if current_step % opt['train']['checkpoint_save'] == 0 and opt['rank'] == 0:
                 logger.info('Saving the model at step: {}'.format(current_step))
                 model.save(current_step)
 
             # -------------------------------
-            # 6) testing - 保持原有的测试逻辑不变
+            # 6) testing - keep original test logic unchanged
             # -------------------------------
             if current_step % opt['train']['checkpoint_test'] == 0 and opt['rank'] == 0:
                 avg_psnr = 0.0
